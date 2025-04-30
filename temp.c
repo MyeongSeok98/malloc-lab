@@ -176,24 +176,21 @@ static void* extend_heap(size_t words){
     return collesce(bp);
 }
 
-int mm_init(void) {   
-    if ((heap_listp = mem_sbrk(8 * WSIZE)) == (void *)-1)
-        return -1;
+int mm_init(void)
+{
+    if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void *)-1)                   // memlib.c를 살펴보면 할당 실패시 (void *)-1을 반환하고 있다. 정상 포인터를 반환하는 것과는 달리, 오류 시 이와 구분 짓기 위해 mem_sbrk는 (void *)-1을 반환하고 있다.
+         return -1;  
 
-    PUT(heap_listp + (0 * WSIZE), 0);
+    PUT(heap_listp, 0);
     PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1));
     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1));
-    PUT(heap_listp + (3 * WSIZE), PACK(2 * DSIZE, 0));
-    PUT(heap_listp + (4 * WSIZE), NULL);
-    PUT(heap_listp + (5 * WSIZE), NULL);
-    PUT(heap_listp + (6 * WSIZE), PACK(2 * DSIZE, 0));
-    PUT(heap_listp + (7 * WSIZE), PACK(0, 1));
-
-    heap_listp += (2 * DSIZE);
-    headp = heap_listp;
-    if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
-        return -1;
+    PUT(heap_listp + (3 * WSIZE), PACK(0, 1));
     
+    heap_listp = heap_listp + (2 * WSIZE);
+    headp = heap_listp;
+    if(extend_heap(CHUNKSIZE / WSIZE) == NULL){
+        return -1;
+    }
     return 0;
 }
 

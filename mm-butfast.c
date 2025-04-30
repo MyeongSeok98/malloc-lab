@@ -34,6 +34,8 @@ team_t team = {
     /* Second member's email address (leave blank if none) */
     "madk"};
 
+// 사용을 위해선 memory 확장이 필요함 2기가 정도로
+
 /* single word (4) or double word (8) alignment */
 #define ALIGNMENT 8
 
@@ -86,72 +88,11 @@ team_t team = {
                      이전 블록 푸터 위치 → 그 값(GET_SIZE)만큼 더 뒤로 가면
                      이전 블록의 payload 시작 위치 
                    */
-
-/* 명시적 가용리스트 */
-#define GET_PRED(bp)        (*(void **)(bp))
-#define GET_SUCC(bp)        (*(void **)((char *)(bp) + WSIZE))
-static char* headp = NULL;
 /*
  * mm_init - initialize the malloc package.
  */
 
 static char* heap_listp;
-
-static void insert_free_block(void *bp){
-    GET_SUCC(bp) = headp;
-    if (headp){
-        GET_PRED(headp) = bp;
-    }
-    
-    headp = bp;
-}
-static void remove_free_block(void *bp){
-    if(bp == headp){
-        headp = GET_SUCC(headp);
-        return;
-    }
-    GET_SUCC(GET_PRED(bp)) = GET_SUCC(bp);
-
-    if(GET_SUCC(bp) != NULL)
-        GET_PRED(GET_SUCC(bp)) = GET_PRED(bp);
-}
-
-static void* collesce(void *bp){
-    // 이전 블록 alloc 여부
-    size_t prealloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
-    // 다음 블록 alloc 여부
-    size_t nextalloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-    size_t thissize = GET_SIZE(HDRP(bp));
-
-    size_t newsize;
-
-    if(nextalloc && !prealloc){
-        remove_free_block(PREV_BLKP(bp));
-        newsize = thissize + GET_SIZE(HDRP(PREV_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(newsize, 0));
-        PUT(FTRP(bp), PACK(newsize, 0));
-        bp = PREV_BLKP(bp);
-    }
-    else if(!nextalloc && prealloc){
-        remove_free_block(NEXT_BLKP(bp));
-        newsize = thissize + GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        PUT(HDRP(bp), PACK(newsize, 0));
-        PUT(FTRP(bp), PACK(newsize, 0));
-    }
-    else if (!nextalloc && !prealloc){
-        remove_free_block(PREV_BLKP(bp));
-        remove_free_block(NEXT_BLKP(bp));
-        newsize = thissize + GET_SIZE(FTRP(NEXT_BLKP(bp))) + GET_SIZE(HDRP(PREV_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(newsize, 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(newsize, 0));
-        bp = PREV_BLKP(bp);
-    }
-
-    insert_free_block(bp);
-    // next-fit
-    return bp;
-}
-
 
 static void* extend_heap(size_t words){
     char* bp;
@@ -173,61 +114,39 @@ static void* extend_heap(size_t words){
     // 에필로그 정하기
     PUT(HDRP(NEXT_BLKP(bp)), PACK(0,1));
 
-    return collesce(bp);
+    return bp;
 }
 
-int mm_init(void) {   
-    if ((heap_listp = mem_sbrk(8 * WSIZE)) == (void *)-1)
-        return -1;
+int mm_init(void)
+{
+    if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void *)-1)                   // memlib.c를 살펴보면 할당 실패시 (void *)-1을 반환하고 있다. 정상 포인터를 반환하는 것과는 달리, 오류 시 이와 구분 짓기 위해 mem_sbrk는 (void *)-1을 반환하고 있다.
+         return -1;  
 
-    PUT(heap_listp + (0 * WSIZE), 0);
+    PUT(heap_listp, 0);
     PUT(heap_listp + (1 * WSIZE), PACK(DSIZE, 1));
     PUT(heap_listp + (2 * WSIZE), PACK(DSIZE, 1));
-    PUT(heap_listp + (3 * WSIZE), PACK(2 * DSIZE, 0));
-    PUT(heap_listp + (4 * WSIZE), NULL);
-    PUT(heap_listp + (5 * WSIZE), NULL);
-    PUT(heap_listp + (6 * WSIZE), PACK(2 * DSIZE, 0));
-    PUT(heap_listp + (7 * WSIZE), PACK(0, 1));
-
-    heap_listp += (2 * DSIZE);
-    headp = heap_listp;
-    if (extend_heap(CHUNKSIZE / WSIZE) == NULL)
-        return -1;
+    PUT(heap_listp + (3 * WSIZE), PACK(0, 1));
     
+    heap_listp = heap_listp + (2 * WSIZE);
     return 0;
 }
 
 void *place(void *bp, size_t size){
     size_t currentsize = GET_SIZE(HDRP(bp));
 
-    /* 명시적 부분 */
-    remove_free_block(bp);
-    /* 명시적 부분 끝*/
+
     if((currentsize - size) >= (2 * DSIZE)){
         PUT(HDRP(bp), PACK(size, 1));
         PUT(FTRP(bp), PACK(size, 1));
         void *newbp = (char *)bp + size;
         PUT(HDRP(newbp), PACK(currentsize - size, 0));
         PUT(FTRP(newbp), PACK(currentsize - size, 0));
-
-        insert_free_block(newbp);
     }
     else{
         PUT(HDRP(bp), PACK(currentsize, 1));
         PUT(FTRP(bp), PACK(currentsize, 1));
     } 
 } 
-
-void *find_fit(size_t size){
-    char *bp = headp;
-    while(bp != NULL){
-        if(GET_SIZE(HDRP(bp)) >= size){
-            return bp;
-        }
-        bp = GET_SUCC(bp);
-    }
-    return NULL;
-}
 
 /*
  * mm_malloc - Allocate a block by incrementing the brk pointer.
@@ -245,10 +164,6 @@ void *mm_malloc(size_t size)
     else
         newsize = DSIZE * ((size + 2 * DSIZE - 1) / DSIZE);
 
-    if((bp = find_fit(newsize)) != NULL){
-        place(bp, newsize);
-        return bp;
-    }
     size_t extendsize = MAX(newsize, CHUNKSIZE);
     if ((bp = extend_heap(extendsize / WSIZE)) == NULL) {                   // 실패 시 bp로는 NULL을 반환한다.
         return NULL;
@@ -264,10 +179,7 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *bp)
 {
-    PUT(HDRP(bp), PACK(GET_SIZE(HDRP(bp)), 0));
-    PUT(FTRP(bp), PACK(GET_SIZE(HDRP(bp)), 0));
 
-    collesce(bp);
 }
 
 /*
